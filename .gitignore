@@ -1,0 +1,8 @@
+node_modules/
+*.log
+.env
+.DS_Store
+coverage/
+
+# built SPA output lives in internal/web/dist (placeholder is tracked)
+web/dist/web/tsconfig.tsbuildinfo
