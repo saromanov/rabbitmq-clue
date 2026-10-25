@@ -1,5 +1,11 @@
 # rabbitmq-clue
 
+[![CI](https://github.com/saromanov/rabbitmq-clue/actions/workflows/ci.yml/badge.svg)](https://github.com/saromanov/rabbitmq-clue/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/saromanov/rabbitmq-clue)](https://goreportcard.com/report/github.com/saromanov/rabbitmq-clue)
+[![Latest release](https://img.shields.io/github/v/release/saromanov/rabbitmq-clue)](https://github.com/saromanov/rabbitmq-clue/releases)
+[![Go version](https://img.shields.io/github/go-mod/go-version/saromanov/rabbitmq-clue)](go.mod)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **Web UI for RabbitMQ operations the management UI can't do: dead-letter replay, safe message inspection, moving messages between queues, and payload forensics.**
 
 One static binary with an embedded UI. No plugins, no database, no agents on the broker.
@@ -14,6 +20,12 @@ docker run --rm -p 8080:8080 \
 ```
 
 Then open http://localhost:8080.
+
+For a local sandbox with both the broker and the UI:
+
+```bash
+docker compose -f deploy/docker-compose.yml up --build
+```
 
 ## Why
 
@@ -74,13 +86,19 @@ Credentials are accepted only through environment or file — never command-line
 ## Development
 
 ```bash
-go build ./...
-go test ./...                                            # unit tests
-RMQ_CLUE_TEST_AMQP_URL=amqp://guest:guest@localhost:5672/%2F go test ./internal/replay/ -run Integration
+make build             # web UI + single binary into bin/
+make test              # unit tests with -race
+make test-integration  # against a real broker (RMQ_CLUE_TEST_AMQP_URL)
+make lint              # golangci-lint v2
+make vulncheck         # govulncheck
 
-cd web && npm ci && npm run dev                          # frontend with HMR, proxies /api to :8080
-cd web && npm run build                                  # rebuild embedded UI into internal/web/dist
+cd web && npm run dev  # frontend with HMR, proxies /api to :8080
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development workflow.
+Releases are tagged `v*`; the release workflow publishes cross-compiled
+binaries, sha256 checksums and a ghcr.io image
+([changelog](CHANGELOG.md), [security policy](SECURITY.md)).
 
 ## Roadmap
 

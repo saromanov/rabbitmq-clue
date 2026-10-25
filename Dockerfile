@@ -13,7 +13,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend /app/internal/web/dist /src/internal/web/dist
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/rabbitmq-clue ./cmd/rabbitmq-clue
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags "-s -w -X github.com/saromanov/rabbitmq-clue/internal/version.version=${VERSION}" \
+    -o /out/rabbitmq-clue ./cmd/rabbitmq-clue
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=backend /out/rabbitmq-clue /rabbitmq-clue

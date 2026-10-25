@@ -1,0 +1,28 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  clue:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: rabbitmq-clue:local
+    environment:
+      RMQ_CLUE_ADDR: 0.0.0.0:8080
+      RMQ_CLUE_MGMT_URL: http://rabbitmq:15672
+      RMQ_CLUE_AMQP_URL: amqp://guest:guest@rabbitmq:5672/%2F
+      RMQ_CLUE_USER: guest
+      RMQ_CLUE_PASS: guest
+    ports:
+      - "8080:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy

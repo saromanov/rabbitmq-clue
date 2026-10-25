@@ -41,6 +41,11 @@ jobs:
         with:
           version: v2.15.0
 
+      - name: go mod tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
       - name: Wait for RabbitMQ
         run: |
           for i in $(seq 1 30); do
@@ -61,6 +66,23 @@ jobs:
         with:
           name: coverage
           path: coverage.txt
+
+  govulncheck:
+    name: Govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: false
+
+      - name: Scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
   frontend:
     name: Frontend (typecheck + build)

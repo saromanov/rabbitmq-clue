@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: RabbitMQ documentation
+    url: https://www.rabbitmq.com/docs
+    about: Broker documentation, TTL/DLX semantics and FAQ
+  - name: Questions and usage help
+    url: https://github.com/saromanov/rabbitmq-clue/discussions
+    about: Ask usage questions here instead of opening an issue
