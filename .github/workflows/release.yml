@@ -76,9 +76,11 @@ jobs:
           VERSION: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
         run: |
+          OUT="rabbitmq-clue"
+          if [ "$GOOS" = "windows" ]; then OUT="rabbitmq-clue.exe"; fi
           CGO_ENABLED=0 go build -trimpath \
             -ldflags "-s -w -X github.com/saromanov/rabbitmq-clue/internal/version.version=${VERSION} -X github.com/saromanov/rabbitmq-clue/internal/version.commit=${COMMIT}" \
-            -o "rabbitmq-clue" ./cmd/rabbitmq-clue
+            -o "$OUT" ./cmd/rabbitmq-clue
 
       - name: Archive (unix)
         if: matrix.goos != 'windows'
