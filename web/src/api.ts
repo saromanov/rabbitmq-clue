@@ -157,6 +157,108 @@ export interface PublishSpec {
   confirm: boolean;
 }
 
+export interface TopologyQueueSpec {
+  name: string;
+  type?: string;
+  durable: boolean;
+  auto_delete: boolean;
+  exclusive: boolean;
+  arguments: Record<string, unknown>;
+}
+
+export interface TopologyExchangeSpec {
+  name: string;
+  type?: string;
+  durable: boolean;
+  auto_delete: boolean;
+  internal: boolean;
+  arguments: Record<string, unknown>;
+}
+
+export interface TopologyBindingSpec {
+  source: string;
+  destination: string;
+  destination_type: string;
+  routing_key: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface TopologyPolicySpec {
+  name: string;
+  apply_to?: string;
+  pattern?: string;
+  priority?: number;
+  definition: Record<string, unknown>;
+}
+
+export interface TopologySnapshot {
+  format: string;
+  version: number;
+  taken_at: string;
+  source: string;
+  vhost: string;
+  queues: TopologyQueueSpec[] | null;
+  exchanges: TopologyExchangeSpec[] | null;
+  bindings: TopologyBindingSpec[] | null;
+  policies: TopologyPolicySpec[] | null;
+}
+
+export type TopologyChangeKind = "added" | "removed" | "changed";
+
+export interface TopologyFieldDiff {
+  field: string;
+  from: unknown;
+  to: unknown;
+}
+
+export interface TopologyQueueChange {
+  kind: TopologyChangeKind;
+  name: string;
+  from?: TopologyQueueSpec | null;
+  to?: TopologyQueueSpec | null;
+  fields?: TopologyFieldDiff[] | null;
+}
+
+export interface TopologyExchangeChange {
+  kind: TopologyChangeKind;
+  name: string;
+  from?: TopologyExchangeSpec | null;
+  to?: TopologyExchangeSpec | null;
+  fields?: TopologyFieldDiff[] | null;
+}
+
+export interface TopologyBindingChange {
+  kind: TopologyChangeKind;
+  from?: TopologyBindingSpec | null;
+  to?: TopologyBindingSpec | null;
+  fields?: TopologyFieldDiff[] | null;
+}
+
+export interface TopologyPolicyChange {
+  kind: TopologyChangeKind;
+  name: string;
+  from?: TopologyPolicySpec | null;
+  to?: TopologyPolicySpec | null;
+  fields?: TopologyFieldDiff[] | null;
+}
+
+export interface TopologyReport {
+  from: string;
+  to: string;
+  vhost: string;
+  queues?: TopologyQueueChange[] | null;
+  exchanges?: TopologyExchangeChange[] | null;
+  bindings?: TopologyBindingChange[] | null;
+  policies?: TopologyPolicyChange[] | null;
+  summary: { identical: boolean; added: number; removed: number; changed: number };
+}
+
+export interface TopologySide {
+  conn?: string;
+  vhost?: string;
+  snapshot?: TopologySnapshot;
+}
+
 export const api = {
   connections: () => request<ConnectionInfo[]>("/connections"),
   overview: (conn: string) => request<Overview>(`/overview?conn=${encodeURIComponent(conn)}`),
@@ -181,6 +283,9 @@ export const api = {
   replayJobs: () => request<ReplayJob[]>("/replay/jobs"),
   cancelReplay: (id: string) => post<{ status: string }>(`/replay/jobs/${id}/cancel`, {}),
   publish: (spec: PublishSpec) => post<{ status: string }>("/publish", spec),
+  topologySnapshot: (conn: string, vhost: string) =>
+    request<TopologySnapshot>(`/topology/snapshot?conn=${encodeURIComponent(conn)}&vhost=${encodeURIComponent(vhost)}`),
+  topologyDiff: (from: TopologySide, to: TopologySide) => post<TopologyReport>("/topology/diff", { from, to }),
 };
 
 export function extractDeathChain(msg: PeekedMessage): DeathStep[] {

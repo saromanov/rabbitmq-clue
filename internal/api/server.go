@@ -19,6 +19,7 @@ import (
 	"github.com/saromanov/rabbitmq-clue/internal/config"
 	"github.com/saromanov/rabbitmq-clue/internal/mgmt"
 	"github.com/saromanov/rabbitmq-clue/internal/replay"
+	"github.com/saromanov/rabbitmq-clue/internal/topology"
 	"github.com/saromanov/rabbitmq-clue/internal/version"
 )
 
@@ -62,6 +63,8 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	r.Post("/api/publish", s.guardMutation(s.handlePublish))
 	r.Get("/api/exchanges", s.handleExchanges)
 	r.Get("/api/bindings", s.handleBindings)
+	r.Get("/api/topology/snapshot", s.handleTopologySnapshot)
+	r.Post("/api/topology/diff", s.handleTopologyDiff)
 	r.Get("/api/events", s.handleEvents)
 
 	if dist != nil {
@@ -422,6 +425,80 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "published"})
+}
+
+// handleTopologySnapshot exports the topology of one vhost as a
+// deterministic JSON snapshot.
+func (s *Server) handleTopologySnapshot(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	conn, err := s.connection(q.Get("conn"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	snap, err := topology.Capture(r.Context(), conn.Name, q.Get("vhost"), s.mgmtClient(conn))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, snap)
+}
+
+// topologySide names one side of a diff: either a live broker (connection
+// plus vhost) or an inline snapshot document.
+type topologySide struct {
+	Conn     string          `json:"conn"`
+	VHost    string          `json:"vhost"`
+	Snapshot json.RawMessage `json:"snapshot,omitempty"`
+}
+
+// topologyDiffRequest compares two sides; format selects the response
+// encoding ("json", the default, or "text").
+type topologyDiffRequest struct {
+	From   topologySide `json:"from"`
+	To     topologySide `json:"to"`
+	Format string       `json:"format"`
+}
+
+// handleTopologyDiff diffs two topologies: both sides can be live
+// brokers or previously exported snapshots, mixed freely.
+func (s *Server) handleTopologyDiff(w http.ResponseWriter, r *http.Request) {
+	var req topologyDiffRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
+		return
+	}
+	from, err := s.resolveTopologySide(r.Context(), req.From)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "from side: "+err.Error())
+		return
+	}
+	to, err := s.resolveTopologySide(r.Context(), req.To)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "to side: "+err.Error())
+		return
+	}
+	report := topology.Diff(from, to)
+	if req.Format == "text" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(topology.RenderText(report)))
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+// resolveTopologySide loads one diff side from an inline snapshot or
+// captures it live from a configured connection.
+func (s *Server) resolveTopologySide(ctx context.Context, side topologySide) (*topology.Snapshot, error) {
+	if len(side.Snapshot) > 0 {
+		return topology.Load(side.Snapshot)
+	}
+	conn, err := s.connection(side.Conn)
+	if err != nil {
+		return nil, err
+	}
+	return topology.Capture(ctx, conn.Name, side.VHost, s.mgmtClient(conn))
 }
 
 // handleEvents streams per-queue stats snapshots over SSE for live views.

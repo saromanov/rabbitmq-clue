@@ -157,6 +157,22 @@ func (c *Client) Bindings(ctx context.Context, vhost string) ([]Binding, error) 
 	return b, nil
 }
 
+// Policies lists policies of a vhost (all policies when vhost is empty).
+func (c *Client) Policies(ctx context.Context, vhost string) ([]Policy, error) {
+	path := "/api/policies"
+	if vhost != "" {
+		path = "/api/policies/" + vhostPathSegment(vhost)
+	}
+	var p []Policy
+	if err := c.getJSON(ctx, path, &p); err != nil {
+		return nil, err
+	}
+	for i := range p {
+		p[i].VHost = firstNonEmpty(p[i].VHost, vhost)
+	}
+	return p, nil
+}
+
 // Peek fetches up to count messages from the head of a queue without
 // consuming them (ack_requeue_true). This is the same destructive-ish
 // operation the stock management UI uses: RabbitMQ re-queues the messages

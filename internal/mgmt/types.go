@@ -59,6 +59,16 @@ type Binding struct {
 	Arguments       map[string]any `json:"arguments"`
 }
 
+// Policy is a subset of the management API policy object.
+type Policy struct {
+	Name       string         `json:"name"`
+	VHost      string         `json:"vhost"`
+	ApplyTo    string         `json:"apply-to"`
+	Pattern    string         `json:"pattern"`
+	Priority   int            `json:"priority"`
+	Definition map[string]any `json:"definition"`
+}
+
 // VHost is a subset of the management API virtual host object.
 type VHost struct {
 	Name     string `json:"name"`
