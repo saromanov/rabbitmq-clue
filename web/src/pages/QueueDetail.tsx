@@ -8,6 +8,7 @@ import {
   type PeekedMessage,
   type Scope,
 } from "../api";
+import { SchemaPicker } from "../components/SchemaPicker";
 
 function pretty(msg: PeekedMessage): string {
   try {
@@ -47,6 +48,7 @@ export default function QueueDetail({
   const qc = useQueryClient();
   const [peekCount, setPeekCount] = useState(20);
   const [selected, setSelected] = useState<number | null>(null);
+  const [decodeSchemaId, setDecodeSchemaId] = useState("");
 
   const [replayOpen, setReplayOpen] = useState(false);
   const [targetQueue, setTargetQueue] = useState("");
@@ -65,8 +67,11 @@ export default function QueueDetail({
   });
 
   const { data: messages, error: peekError, refetch: refetchPeek, isFetching } = useQuery({
-    queryKey: ["peek", scope.conn, scope.vhost, queueName, peekCount],
-    queryFn: () => api.peek(scope.conn, scope.vhost, queueName, peekCount),
+    queryKey: ["peek", scope.conn, scope.vhost, queueName, peekCount, decodeSchemaId],
+    queryFn: () =>
+      api.peek(scope.conn, scope.vhost, queueName, peekCount, decodeSchemaId
+        ? { schema_id: decodeSchemaId }
+        : undefined),
     enabled: false,
   });
 
@@ -199,6 +204,19 @@ export default function QueueDetail({
           </span>
         </div>
 
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Decode as schema
+          </span>
+          <SchemaPicker
+            filterKind="queue"
+            filterName={queueName}
+            selected={decodeSchemaId}
+            onSelect={setDecodeSchemaId}
+            allowImport={false}
+          />
+        </div>
+
         {suggestTarget && (
           <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
             This looks like a dead-letter queue: messages originally came from{" "}
@@ -222,6 +240,7 @@ export default function QueueDetail({
                     <th className="px-3 py-2">Routing key</th>
                     <th className="px-3 py-2 text-right">Deaths</th>
                     <th className="px-3 py-2 text-right">Bytes</th>
+                    {decodeSchemaId && <th className="px-3 py-2">Decode</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -241,6 +260,19 @@ export default function QueueDetail({
                         ) : "—"}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{m.payload_bytes}</td>
+                      {decodeSchemaId && (
+                        <td className="px-3 py-2 text-xs">
+                          {m.decode_error ? (
+                            <span className="rounded bg-red-100 px-1.5 text-red-700 dark:bg-red-950 dark:text-red-300" title={m.decode_error}>
+                              error
+                            </span>
+                          ) : m.decoded ? (
+                            <span className="text-green-700 dark:text-green-400" title={m.decoded_type}>
+                              {m.unwrapped ? "any → " : ""}{m.decoded_type}
+                            </span>
+                          ) : "—"}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -446,6 +478,29 @@ function MessageView({
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Payload</div>
         <pre className="max-h-72 overflow-auto rounded bg-zinc-100 p-2 text-xs dark:bg-zinc-800">{pretty(msg)}</pre>
       </div>
+      {msg.decoded && (
+        <div>
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Decoded ({msg.unwrapped ? "unwrapped from Any → " : ""}{msg.decoded_type})
+          </div>
+          <pre className="max-h-72 overflow-auto rounded bg-emerald-50 p-2 text-xs dark:bg-emerald-950">
+            {formatDecoded(msg.decoded)}
+          </pre>
+        </div>
+      )}
+      {msg.decode_error && (
+        <div className="rounded-md bg-red-100 p-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">
+          decode failed: {msg.decode_error}
+        </div>
+      )}
     </div>
   );
+}
+
+function formatDecoded(json: string): string {
+  try {
+    return JSON.stringify(JSON.parse(json), null, 2);
+  } catch {
+    return json;
+  }
 }

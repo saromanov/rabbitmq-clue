@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, type PublishSpec, type Scope } from "../api";
+import { SchemaPayloadEditor, SchemaPicker } from "../components/SchemaPicker";
 
 export default function Publish({ scope }: { scope: Scope }) {
   const [exchange, setExchange] = useState("");
@@ -11,6 +11,13 @@ export default function Publish({ scope }: { scope: Scope }) {
   const [headersRaw, setHeadersRaw] = useState("{}");
   const [deliveryMode, setDeliveryMode] = useState("2");
   const [priority, setPriority] = useState("0");
+
+  const [schemaId, setSchemaId] = useState("");
+  const [schemaType, setSchemaType] = useState("");
+  const [encoding, setEncoding] = useState("binary");
+  const [wrapAny, setWrapAny] = useState(false);
+  const [jsonProtoNames, setJsonProtoNames] = useState(false);
+  const [payloadError, setPayloadError] = useState<string | null>(null);
 
   const { data: exchanges } = useQuery({
     queryKey: ["exchanges", scope.conn, scope.vhost],
@@ -22,13 +29,68 @@ export default function Publish({ scope }: { scope: Scope }) {
     mutationFn: (spec: PublishSpec) => api.publish(spec),
   });
 
+  const publishProto = useMutation({
+    mutationFn: (payload: unknown) =>
+      api.publishProto({
+        conn: scope.conn,
+        vhost: scope.vhost,
+        schema_id: schemaId,
+        message_type: schemaType,
+        payload,
+        encoding,
+        wrap_any: wrapAny,
+        json_proto_names: jsonProtoNames,
+        exchange,
+        routing_key: routingKey,
+        headers: safeHeaders(headersRaw),
+        delivery_mode: Number(deliveryMode),
+        priority: Number(priority),
+      }),
+  });
+
   let headersError: string | null = null;
-  let headers: Record<string, string> = {};
   try {
-    headers = JSON.parse(headersRaw);
+    safeHeaders(headersRaw);
   } catch (e) {
     headersError = (e as Error).message;
   }
+
+  const publishDisabled =
+    !!headersError || publish.isPending || publishProto.isPending ||
+    (schemaId !== "" && !schemaType);
+
+  const onPublish = () => {
+    if (schemaId) {
+      try {
+        const payload = JSON.parse(body);
+        setPayloadError(null);
+        publishProto.mutate(payload);
+      } catch (e) {
+        setPayloadError((e as Error).message);
+      }
+      return;
+    }
+    publish.mutate({
+      conn: scope.conn,
+      vhost: scope.vhost,
+      exchange,
+      routing_key: routingKey,
+      body,
+      content_type: contentType,
+      headers: safeHeaders(headersRaw),
+      delivery_mode: Number(deliveryMode),
+      priority: Number(priority),
+      confirm: true,
+    });
+  };
+
+  const lastError = publishProto.isError
+    ? (publishProto.error as Error).message
+    : publish.isError
+      ? (publish.error as Error).message
+      : payloadError;
+  const succeeded = publish.isSuccess || publishProto.isSuccess;
+  const pending = publish.isPending || publishProto.isPending;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -41,7 +103,11 @@ export default function Publish({ scope }: { scope: Scope }) {
           Exchange
           <select
             value={exchange}
-            onChange={(e) => setExchange(e.target.value)}
+            onChange={(e) => {
+              setExchange(e.target.value);
+              setSchemaId("");
+              setSchemaType("");
+            }}
             className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
           >
             <option value="">(default — routing key = queue name)</option>
@@ -65,7 +131,8 @@ export default function Publish({ scope }: { scope: Scope }) {
           <input
             value={contentType}
             onChange={(e) => setContentType(e.target.value)}
-            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+            disabled={schemaId !== ""}
+            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800"
           />
         </label>
         <div className="grid grid-cols-2 gap-4">
@@ -101,43 +168,92 @@ export default function Publish({ scope }: { scope: Scope }) {
         />
         {headersError && <span className="text-xs text-red-600 dark:text-red-400">invalid JSON: {headersError}</span>}
       </label>
+
+      <div className="space-y-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Protobuf schema{exchange ? ` for ${exchange}` : ""}
+        </div>
+        <SchemaPicker
+          filterKind="exchange"
+          filterName={exchange}
+          selected={schemaId}
+          onSelect={(id) => {
+            setSchemaId(id);
+            setSchemaType("");
+          }}
+          allowImport
+        />
+        {schemaId && (
+          <>
+            <SchemaPayloadEditor
+              schemaId={schemaId}
+              type={schemaType}
+              onType={setSchemaType}
+              onSkeleton={(sk) => setBody(sk)}
+            />
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                Encoding
+                <select
+                  value={encoding}
+                  onChange={(e) => setEncoding(e.target.value)}
+                  className="rounded-md border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800"
+                >
+                  <option value="binary">binary proto</option>
+                  <option value="json">JSON (protojson)</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={wrapAny} onChange={(e) => setWrapAny(e.target.checked)} />
+                wrap in google.protobuf.Any
+              </label>
+              {encoding === "json" && (
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={jsonProtoNames} onChange={(e) => setJsonProtoNames(e.target.checked)} />
+                  snake_case names
+                </label>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
       <label className="block text-sm">
-        Payload
+        {schemaId ? "Payload (protojson)" : "Payload"}
         <textarea
           value={body}
-          onChange={(e) => setBody(e.target.value)}
+          onChange={(e) => {
+            setBody(e.target.value);
+            setPayloadError(null);
+          }}
           rows={10}
+          spellCheck={false}
           className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-800"
         />
       </label>
       <div className="flex items-center gap-3">
         <button
-          onClick={() =>
-            publish.mutate({
-              conn: scope.conn,
-              vhost: scope.vhost,
-              exchange,
-              routing_key: routingKey,
-              body,
-              content_type: contentType,
-              headers,
-              delivery_mode: Number(deliveryMode),
-              priority: Number(priority),
-              confirm: true,
-            })
-          }
-          disabled={!!headersError || publish.isPending}
+          onClick={onPublish}
+          disabled={publishDisabled}
           className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
         >
-          {publish.isPending ? "Publishing…" : "Publish"}
+          {pending ? "Publishing…" : "Publish"}
         </button>
-        {publish.isSuccess && (
+        {succeeded && (
           <span className="text-sm text-green-700 dark:text-green-400">Message confirmed by broker</span>
         )}
-        {publish.isError && (
-          <span className="text-sm text-red-600 dark:text-red-400">{(publish.error as Error).message}</span>
+        {lastError && !pending && (
+          <span className="text-sm text-red-600 dark:text-red-400">{lastError}</span>
         )}
       </div>
     </div>
   );
+}
+
+function safeHeaders(raw: string): Record<string, string> {
+  const parsed = JSON.parse(raw);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return parsed as Record<string, string>;
+  }
+  throw new Error("headers must be a JSON object");
 }
