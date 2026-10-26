@@ -39,7 +39,8 @@ func fakeMgmt(t *testing.T) *httptest.Server {
 func testConfig(t *testing.T, mgmtURL string, readOnly bool) *config.Config {
 	t.Helper()
 	return &config.Config{
-		Addr: "127.0.0.1:0",
+		Addr:       "127.0.0.1:0",
+		SchemasDir: t.TempDir(),
 		Connections: []config.Connection{
 			{Name: "test", MgmtURL: mgmtURL, AMQPURL: "amqp://127.0.0.1:1/%2F", Username: "u", Password: "p"},
 		},

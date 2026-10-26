@@ -21,6 +21,7 @@ type Connection struct {
 type Config struct {
 	Addr        string
 	ReadOnly    bool
+	SchemasDir  string
 	Connections []Connection
 }
 
@@ -35,6 +36,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Addr:        envString("ADDR", "127.0.0.1:8080"),
 		ReadOnly:    envBool("READ_ONLY", false),
+		SchemasDir:  envString("SCHEMAS_DIR", "data/schemas"),
 		Connections: []Connection{},
 	}
 

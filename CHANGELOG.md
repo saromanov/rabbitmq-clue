@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Protobuf schema core: in-memory `.proto` compilation
+  (`internal/schema`, protocompile + dynamicpb, no protoc or generated
+  code), JSON skeletons with field descriptions, payload encoding to
+  binary protobuf or JSON (optional `google.protobuf.Any` wrapping),
+  and payload decoding with automatic `Any` unwrapping by `type_url`
+- Schema store: saved schemas as directories under
+  `RMQ_CLUE_SCHEMAS_DIR` (default `data/schemas`) with exchange/queue
+  bindings
+- Schema API: compile, CRUD (`/api/schemas`), publish via schema
+  (`POST /api/publish/proto`), and peek decoding (`POST /api/queues/peek`
+  with `schema_id` returns messages with decoded JSON)
+
 ## [0.2.0] - 2026-10-26
 
 ### Added

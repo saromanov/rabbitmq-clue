@@ -19,6 +19,7 @@ import (
 	"github.com/saromanov/rabbitmq-clue/internal/config"
 	"github.com/saromanov/rabbitmq-clue/internal/mgmt"
 	"github.com/saromanov/rabbitmq-clue/internal/replay"
+	"github.com/saromanov/rabbitmq-clue/internal/schema"
 	"github.com/saromanov/rabbitmq-clue/internal/topology"
 	"github.com/saromanov/rabbitmq-clue/internal/version"
 )
@@ -27,6 +28,7 @@ import (
 type Server struct {
 	cfg      *config.Config
 	engine   *replay.Engine
+	store    *schema.Store
 	mgmtOnce sync.Once
 	mgmts    map[string]*mgmt.Client
 }
@@ -36,6 +38,7 @@ func New(cfg *config.Config) *Server {
 	return &Server{
 		cfg:    cfg,
 		engine: replay.NewEngine(),
+		store:  schema.NewStore(cfg.SchemasDir),
 		mgmts:  map[string]*mgmt.Client{},
 	}
 }
@@ -61,6 +64,13 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	r.Get("/api/replay/jobs/{id}", s.handleReplayJob)
 	r.Post("/api/replay/jobs/{id}/cancel", s.handleReplayCancel)
 	r.Post("/api/publish", s.guardMutation(s.handlePublish))
+	r.Post("/api/publish/proto", s.guardMutation(s.handlePublishProto))
+	r.Get("/api/schemas", s.handleListSchemas)
+	r.Post("/api/schemas/compile", s.handleCompileSchema)
+	r.Post("/api/schemas", s.guardMutation(s.handleCreateSchema))
+	r.Get("/api/schemas/{id}", s.handleGetSchema)
+	r.Put("/api/schemas/{id}", s.guardMutation(s.handleUpdateSchema))
+	r.Delete("/api/schemas/{id}", s.guardMutation(s.handleDeleteSchema))
 	r.Get("/api/exchanges", s.handleExchanges)
 	r.Get("/api/bindings", s.handleBindings)
 	r.Get("/api/topology/snapshot", s.handleTopologySnapshot)
@@ -237,11 +247,18 @@ func (s *Server) handleBindings(w http.ResponseWriter, r *http.Request) {
 }
 
 // peekRequest targets one queue for a bounded, requeueing peek.
+// When SchemaID is set, payloads are additionally decoded as protobuf
+// messages of that saved schema.
 type peekRequest struct {
-	Conn  string `json:"conn"`
-	VHost string `json:"vhost"`
-	Name  string `json:"name"`
-	Count int    `json:"count"`
+	Conn            string `json:"conn"`
+	VHost           string `json:"vhost"`
+	Name            string `json:"name"`
+	Count           int    `json:"count"`
+	Truncate        int    `json:"truncate"`
+	SchemaID        string `json:"schema_id"`
+	PayloadJSON     bool   `json:"payload_json"`
+	UseProtoNames   bool   `json:"use_proto_names"`
+	EmitUnpopulated bool   `json:"emit_unpopulated"`
 }
 
 func (s *Server) handlePeek(w http.ResponseWriter, r *http.Request) {
@@ -253,17 +270,38 @@ func (s *Server) handlePeek(w http.ResponseWriter, r *http.Request) {
 	if req.Count <= 0 || req.Count > 100 {
 		req.Count = 20
 	}
+	truncate := 256 * 1024
+	if req.Truncate > 0 {
+		truncate = req.Truncate
+		if truncate > peekMaxTruncate {
+			truncate = peekMaxTruncate
+		}
+	}
 	conn, err := s.connection(req.Conn)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	msgs, err := s.mgmtClient(conn).Peek(r.Context(), req.VHost, req.Name, req.Count, 256*1024)
+	msgs, err := s.mgmtClient(conn).Peek(r.Context(), req.VHost, req.Name, req.Count, truncate)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, msgs)
+	if req.SchemaID == "" {
+		writeJSON(w, http.StatusOK, msgs)
+		return
+	}
+	c, err := s.compiledSchema(req.SchemaID, nil)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	meta, err := s.store.Get(req.SchemaID)
+	if err != nil {
+		writeError(w, apiErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, peekWithSchema(c, meta.MessageType, msgs, req))
 }
 
 // agesRequest estimates the age of the head message for each named queue.
