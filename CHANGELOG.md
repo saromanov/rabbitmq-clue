@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Schema API: compile, CRUD (`/api/schemas`), publish via schema
   (`POST /api/publish/proto`), and peek decoding (`POST /api/queues/peek`
   with `schema_id` returns messages with decoded JSON)
+- Web UI: schema picker with import (paste `.proto` text or upload
+  files) in the publish form, JSON skeleton loading with a field panel,
+  encoding and wrap-Any options, and peek decoding with a schema
+  selector, decoded payload view and per-message decode status
 
 ## [0.2.0] - 2026-10-26
 

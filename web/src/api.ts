@@ -91,6 +91,75 @@ export interface PeekedMessage {
     headers?: Record<string, unknown>;
     [key: string]: unknown;
   };
+  decoded?: string;
+  decoded_type?: string;
+  unwrapped?: boolean;
+  decode_error?: string;
+}
+
+export interface SchemaBinding {
+  kind: string;
+  name: string;
+}
+
+export interface SchemaMeta {
+  id: string;
+  name: string;
+  message_type: string;
+  bindings?: SchemaBinding[];
+  files: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchemaFieldInfo {
+  path: string;
+  name: string;
+  proto_name: string;
+  kind: string;
+  type_name?: string;
+  repeated?: boolean;
+  map?: boolean;
+  oneof?: string;
+  enum_values?: string[];
+}
+
+export interface CompileResponse {
+  types: string[];
+  skeleton?: string;
+  fields?: SchemaFieldInfo[];
+}
+
+export interface SaveSchemaSpec {
+  name: string;
+  message_type: string;
+  bindings?: SchemaBinding[];
+  files: Record<string, string>;
+}
+
+export interface PublishProtoSpec {
+  conn: string;
+  vhost: string;
+  schema_id?: string;
+  message_type: string;
+  payload: unknown;
+  encoding: string;
+  wrap_any: boolean;
+  json_proto_names?: boolean;
+  content_type?: string;
+  exchange: string;
+  routing_key: string;
+  headers: Record<string, unknown>;
+  delivery_mode: number;
+  priority: number;
+}
+
+export interface PeekOptions {
+  schema_id?: string;
+  truncate?: number;
+  payload_json?: boolean;
+  use_proto_names?: boolean;
+  emit_unpopulated?: boolean;
 }
 
 export interface Overview {
@@ -271,8 +340,8 @@ export const api = {
     request<Exchange[]>(`/exchanges?conn=${encodeURIComponent(conn)}&vhost=${encodeURIComponent(vhost)}`),
   bindings: (conn: string, vhost: string) =>
     request<Binding[]>(`/bindings?conn=${encodeURIComponent(conn)}&vhost=${encodeURIComponent(vhost)}`),
-  peek: (conn: string, vhost: string, name: string, count: number) =>
-    post<PeekedMessage[]>("/queues/peek", { conn, vhost, name, count }),
+  peek: (conn: string, vhost: string, name: string, count: number, opts?: PeekOptions) =>
+    post<PeekedMessage[]>("/queues/peek", { conn, vhost, name, count, ...opts }),
   ages: (conn: string, vhost: string, names: string[]) =>
     post<QueueTotal[]>("/queues/ages", { conn, vhost, names }),
   purge: (conn: string, vhost: string, name: string) =>
@@ -283,6 +352,26 @@ export const api = {
   replayJobs: () => request<ReplayJob[]>("/replay/jobs"),
   cancelReplay: (id: string) => post<{ status: string }>(`/replay/jobs/${id}/cancel`, {}),
   publish: (spec: PublishSpec) => post<{ status: string }>("/publish", spec),
+  publishProto: (spec: PublishProtoSpec) => post<{ status: string }>("/publish/proto", spec),
+  schemas: (filter?: { exchange?: string; queue?: string }) => {
+    const q = new URLSearchParams();
+    if (filter?.exchange) q.set("exchange", filter.exchange);
+    if (filter?.queue) q.set("queue", filter.queue);
+    const suffix = q.toString() ? `?${q.toString()}` : "";
+    return request<SchemaMeta[]>(`/schemas${suffix}`);
+  },
+  schema: (id: string) => request<SchemaMeta & { files: Record<string, string> }>(`/schemas/${encodeURIComponent(id)}`),
+  saveSchema: (spec: SaveSchemaSpec) => post<SchemaMeta>("/schemas", spec),
+  updateSchema: (id: string, spec: SaveSchemaSpec) =>
+    request<SchemaMeta>(`/schemas/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(spec),
+    }),
+  deleteSchema: (id: string) =>
+    request<{ status: string }>(`/schemas/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  compileSchema: (files: Record<string, string>, messageType?: string) =>
+    post<CompileResponse>("/schemas/compile", { files, message_type: messageType ?? "" }),
   topologySnapshot: (conn: string, vhost: string) =>
     request<TopologySnapshot>(`/topology/snapshot?conn=${encodeURIComponent(conn)}&vhost=${encodeURIComponent(vhost)}`),
   topologyDiff: (from: TopologySide, to: TopologySide) => post<TopologyReport>("/topology/diff", { from, to }),
