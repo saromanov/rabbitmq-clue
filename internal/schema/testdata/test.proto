@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package clue.test.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+enum Status {
+  STATUS_UNKNOWN = 0;
+  STATUS_ACTIVE = 1;
+  STATUS_BLOCKED = 2;
+}
+
+message Address {
+  string city = 1;
+  string street = 2;
+}
+
+message Item {
+  int32 int32_field = 1;
+  int64 int64_field = 2;
+  uint64 uint64_field = 3;
+  float float_field = 4;
+  double double_field = 5;
+  bool bool_field = 6;
+  string string_field = 7;
+  bytes bytes_field = 8;
+  Status status = 9;
+  Address address = 10;
+  repeated string tags = 11;
+  repeated Address addresses = 12;
+  map<string, int32> counters = 13;
+  map<int32, Address> addresses_by_id = 14;
+  oneof extra {
+    string note = 15;
+    int64 score = 16;
+  }
+  google.protobuf.Timestamp created_at = 17;
+  google.protobuf.Duration ttl = 18;
+  google.protobuf.Any payload = 19;
+  Nested nested = 20;
+}
+
+message Nested {
+  Item item = 1;
+}
+
+message AnyEnvelope {
+  google.protobuf.Any payload = 1;
+}
