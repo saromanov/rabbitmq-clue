@@ -45,6 +45,7 @@ rabbitmq-clue does these things in a browser, with confirmations, dry runs and a
 - **Backlog age estimation** — computes how old the head message of a queue is from its timestamp or `x-death` records — including for quorum queues, which the broker doesn't report this for.
 - **Republish** — take a peeked message, edit it, send it back through its original exchange/routing key.
 - **Publish** — a real publish form: headers, all AMQP properties, persistent/transient, publisher confirms.
+- **Protobuf schemas** — paste or upload `.proto` files, compile them in memory (no protoc, no generated code), pick a message type and publish payloads encoded as binary protobuf or JSON — optionally wrapped in `google.protobuf.Any`. Saved schemas are bound to exchanges/queues and auto-suggested in the publish form and in peek, where payloads are decoded to JSON on the fly (with automatic `Any` unwrapping by `type_url`).
 - **Multi-connection** — configure several brokers (env or JSON file), switch connections and vhosts in the UI.
 - **Topology diff** — export a vhost topology snapshot (queues, exchanges, bindings, policies with their arguments) to JSON and diff dev vs prod: live-to-live, snapshot-to-snapshot, or mixed. The UI renders a color-coded report; `POST /api/topology/diff` with `{"format": "text"}` returns the same report as plain text for curl and CI.
 - **Read-only mode** — `RMQ_CLUE_READ_ONLY=true` disables every mutating endpoint; useful when the UI is pointed at production.
@@ -72,6 +73,7 @@ Replayed messages get `x-replayed-by: rabbitmq-clue` and `x-replay-time` headers
 | `RMQ_CLUE_USER` / `RMQ_CLUE_PASS` | — | Broker credentials |
 | `RMQ_CLUE_READ_ONLY` | `false` | Disable all mutating operations |
 | `RMQ_CLUE_CONNECTIONS_FILE` | — | JSON file with multiple connections (see below) |
+| `RMQ_CLUE_SCHEMAS_DIR` | `data/schemas` | Directory where saved protobuf schemas are stored |
 
 Multiple connections:
 
