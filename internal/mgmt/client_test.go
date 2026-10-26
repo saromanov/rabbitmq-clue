@@ -149,3 +149,35 @@ func TestHeadTimeFromXDeath(t *testing.T) {
 		t.Fatalf("head time: want %v, got %v", want, head)
 	}
 }
+
+func TestPolicies(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case "/api/policies/default":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"name":"dlq","vhost":"default","apply-to":"queues","pattern":"^work$","priority":5,
+				 "definition":{"dead-letter-exchange":"dlx","message-ttl":60000}}
+			]`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.EscapedPath())
+		}
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "user", "pass")
+	policies, err := c.Policies(context.Background(), "default")
+	if err != nil {
+		t.Fatalf("Policies: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("want 1 policy, got %d", len(policies))
+	}
+	p := policies[0]
+	if p.Name != "dlq" || p.ApplyTo != "queues" || p.Pattern != "^work$" || p.Priority != 5 {
+		t.Fatalf("unexpected policy: %+v", p)
+	}
+	if p.Definition["dead-letter-exchange"] != "dlx" {
+		t.Fatalf("unexpected definition: %+v", p.Definition)
+	}
+}

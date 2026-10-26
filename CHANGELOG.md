@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Topology diff: export a vhost topology snapshot (queues, exchanges,
+  bindings, policies with their arguments) to deterministic JSON, and
+  diff two brokers, two exported snapshots, or a mix — with a
+  color-coded report in the UI and a plain-text rendering via
+  `POST /api/topology/diff` (`{"format": "text"}`)
+
 ## [0.1.1] - 2026-10-26
 
 ### Fixed

@@ -46,6 +46,7 @@ rabbitmq-clue does these things in a browser, with confirmations, dry runs and a
 - **Republish** — take a peeked message, edit it, send it back through its original exchange/routing key.
 - **Publish** — a real publish form: headers, all AMQP properties, persistent/transient, publisher confirms.
 - **Multi-connection** — configure several brokers (env or JSON file), switch connections and vhosts in the UI.
+- **Topology diff** — export a vhost topology snapshot (queues, exchanges, bindings, policies with their arguments) to JSON and diff dev vs prod: live-to-live, snapshot-to-snapshot, or mixed. The UI renders a color-coded report; `POST /api/topology/diff` with `{"format": "text"}` returns the same report as plain text for curl and CI.
 - **Read-only mode** — `RMQ_CLUE_READ_ONLY=true` disables every mutating endpoint; useful when the UI is pointed at production.
 
 ## Caveats (the honest section)

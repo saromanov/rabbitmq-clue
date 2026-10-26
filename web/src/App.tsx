@@ -4,13 +4,15 @@ import { api, type ConnectionInfo, type Scope } from "./api";
 import Overview from "./pages/Overview";
 import Queues from "./pages/Queues";
 import Publish from "./pages/Publish";
+import Topology from "./pages/Topology";
 
-export type Page = "overview" | "queues" | "publish";
+export type Page = "overview" | "queues" | "publish" | "topology";
 
 const navItems: { id: Page; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "queues", label: "Queues" },
   { id: "publish", label: "Publish" },
+  { id: "topology", label: "Topology" },
 ];
 
 export default function App() {
@@ -111,6 +113,7 @@ export default function App() {
           />
         )}
         {page === "publish" && <Publish scope={{ conn: connName, vhost: activeVhost }} />}
+        {page === "topology" && <Topology scope={{ conn: connName, vhost: activeVhost }} />}
       </main>
     </div>
   );
