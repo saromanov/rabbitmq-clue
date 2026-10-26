@@ -59,7 +59,8 @@ jobs:
       - name: Integration tests
         env:
           RMQ_CLUE_TEST_AMQP_URL: amqp://guest:guest@127.0.0.1:5672/%2F
-        run: go test -race ./internal/replay/ -run Integration
+          RMQ_CLUE_TEST_MGMT_URL: http://127.0.0.1:15672
+        run: go test -race ./internal/replay/ ./internal/schema/ -run Integration
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
