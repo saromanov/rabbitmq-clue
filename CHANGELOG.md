@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files) in the publish form, JSON skeleton loading with a field panel,
   encoding and wrap-Any options, and peek decoding with a schema
   selector, decoded payload view and per-message decode status
+- Integration test: publish → peek → decode round-trip against a real
+  broker (binary proto and Any-wrapped payloads)
 
 ## [0.2.0] - 2026-10-26
 
