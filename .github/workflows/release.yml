@@ -29,7 +29,7 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-dist
           path: internal/web/dist
@@ -96,7 +96,7 @@ jobs:
           zip "$ARCHIVE" rabbitmq-clue.exe
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: archives-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ env.ARCHIVE }}
