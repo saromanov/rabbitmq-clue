@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/saromanov/rabbitmq-clue/internal/amqpop"
+	"github.com/saromanov/rabbitmq-clue/internal/journey"
 	"github.com/saromanov/rabbitmq-clue/internal/mgmt"
 	"github.com/saromanov/rabbitmq-clue/internal/schema"
 )
@@ -52,10 +53,25 @@ type publishProtoRequest struct {
 
 type peekedMessage struct {
 	mgmt.Message
-	Decoded     string `json:"decoded,omitempty"`
-	DecodedType string `json:"decoded_type,omitempty"`
-	Unwrapped   bool   `json:"unwrapped,omitempty"`
-	DecodeError string `json:"decode_error,omitempty"`
+	Decoded     string           `json:"decoded,omitempty"`
+	DecodedType string           `json:"decoded_type,omitempty"`
+	Unwrapped   bool             `json:"unwrapped,omitempty"`
+	DecodeError string           `json:"decode_error,omitempty"`
+	Journey     *journey.Journey `json:"journey,omitempty"`
+}
+
+// peekedMessages wraps raw peek results and attaches the reconstructed
+// dead-letter journey to every message that carries an x-death header.
+func peekedMessages(msgs []mgmt.Message, currentQueue string) []peekedMessage {
+	out := make([]peekedMessage, 0, len(msgs))
+	for i := range msgs {
+		pm := peekedMessage{Message: msgs[i]}
+		if headers, ok := msgs[i].Properties["headers"].(map[string]any); ok {
+			pm.Journey = journey.Build(headers, currentQueue)
+		}
+		out = append(out, pm)
+	}
+	return out
 }
 
 // compiledSchema loads schema files (from the store or inline) and compiles them.
@@ -301,18 +317,18 @@ func (s *Server) handlePublishProto(w http.ResponseWriter, r *http.Request) {
 }
 
 // peekWithSchema wraps peeked messages with schema decoding.
-func peekWithSchema(c *schema.Compiled, messageType string, msgs []mgmt.Message, req peekRequest) []peekedMessage {
+func peekWithSchema(c *schema.Compiled, messageType string, msgs []peekedMessage, req peekRequest) []peekedMessage {
 	out := make([]peekedMessage, 0, len(msgs))
 	for i := range msgs {
-		pm := peekedMessage{Message: msgs[i]}
-		raw, err := peekPayloadBytes(msgs[i])
+		pm := msgs[i]
+		raw, err := peekPayloadBytes(msgs[i].Message)
 		if err != nil {
 			pm.DecodeError = err.Error()
 			out = append(out, pm)
 			continue
 		}
 		opts := schema.DecodeOpts{
-			PayloadJSON:     req.PayloadJSON || strings.Contains(msgContentType(msgs[i]), "json"),
+			PayloadJSON:     req.PayloadJSON || strings.Contains(msgContentType(msgs[i].Message), "json"),
 			UseProtoNames:   req.UseProtoNames,
 			EmitUnpopulated: req.EmitUnpopulated,
 		}

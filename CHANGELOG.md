@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Message journey: peek responses now carry a `journey` object for
+  messages with `x-death` headers — the chronological hop list (queue,
+  reason, count, time, source exchange and routing keys), the origin
+  queue, total deaths and retries, detected retry ladders (repeated
+  deaths on one queue, the TTL+DLX exponential backoff topology), and
+  the current queue with the time since the last death. Rendered as a
+  timeline in the peek viewer.
+- `internal/mgmt` now tolerates the RabbitMQ 4.x management API quirk
+  of serialising empty maps as empty JSON arrays (`"properties": []`),
+  which previously failed peeking plain messages, and normalises the
+  4.x `x-death` shape (unix-second times, flat `x-first-death-*` keys).
+
 ## [0.3.0] - 2026-10-26
 
 ### Added

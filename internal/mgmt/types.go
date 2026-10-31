@@ -1,5 +1,7 @@
 package mgmt
 
+import "encoding/json"
+
 // RateDetails carries the rolling rate information the management API
 // attaches to counters ("publish_details": {"rate": 3.5, ...}).
 type RateDetails struct {
@@ -117,6 +119,55 @@ type Message struct {
 	RoutingKey      string         `json:"routing_key"`
 	MessageCount    int            `json:"message_count"`
 	Properties      map[string]any `json:"properties"`
+}
+
+// messageFields mirrors Message with raw properties so the RabbitMQ 4.x
+// quirk of serialising empty maps as empty JSON arrays ("properties": [])
+// can be tolerated instead of failing the whole peek. Used by decodeMessage.
+type messageFields struct {
+	PayloadBytes    int             `json:"payload_bytes"`
+	Payload         string          `json:"payload"`
+	PayloadEncoding string          `json:"payload_encoding"`
+	Redelivered     bool            `json:"redelivered"`
+	Exchange        string          `json:"exchange"`
+	RoutingKey      string          `json:"routing_key"`
+	MessageCount    int             `json:"message_count"`
+	Properties      json.RawMessage `json:"properties"`
+}
+
+// decodeMessage decodes one GET-messages entry, mapping an empty
+// properties array to an empty properties map.
+func decodeMessage(data []byte) (Message, error) {
+	var m Message
+	if err := json.Unmarshal(data, &m); err == nil {
+		return m, nil
+	}
+	var f messageFields
+	if err := json.Unmarshal(data, &f); err != nil {
+		return Message{}, err
+	}
+	m = Message{
+		PayloadBytes:    f.PayloadBytes,
+		Payload:         f.Payload,
+		PayloadEncoding: f.PayloadEncoding,
+		Redelivered:     f.Redelivered,
+		Exchange:        f.Exchange,
+		RoutingKey:      f.RoutingKey,
+		MessageCount:    f.MessageCount,
+		Properties:      map[string]any{},
+	}
+	if len(f.Properties) > 0 {
+		var props map[string]any
+		if err := json.Unmarshal(f.Properties, &props); err != nil {
+			var arr []any
+			if aerr := json.Unmarshal(f.Properties, &arr); aerr != nil || len(arr) != 0 {
+				return Message{}, err
+			}
+		} else {
+			m.Properties = props
+		}
+	}
+	return m, nil
 }
 
 // PublishMessage is the request body for peek/publish through the

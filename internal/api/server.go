@@ -287,8 +287,9 @@ func (s *Server) handlePeek(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	peeked := peekedMessages(msgs, req.Name)
 	if req.SchemaID == "" {
-		writeJSON(w, http.StatusOK, msgs)
+		writeJSON(w, http.StatusOK, peeked)
 		return
 	}
 	c, err := s.compiledSchema(req.SchemaID, nil)
@@ -301,7 +302,7 @@ func (s *Server) handlePeek(w http.ResponseWriter, r *http.Request) {
 		writeError(w, apiErrorStatus(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, peekWithSchema(c, meta.MessageType, msgs, req))
+	writeJSON(w, http.StatusOK, peekWithSchema(c, meta.MessageType, peeked, req))
 }
 
 // agesRequest estimates the age of the head message for each named queue.

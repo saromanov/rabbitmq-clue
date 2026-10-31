@@ -23,7 +23,7 @@ test: ## Unit tests with race detector
 .PHONY: test-integration
 test-integration: ## Integration tests against a real broker
 	RMQ_CLUE_TEST_AMQP_URL=$${RMQ_CLUE_TEST_AMQP_URL:-amqp://guest:guest@127.0.0.1:5672/%2F} \
-		go test -race ./internal/replay/ ./internal/schema/ -run Integration
+		go test -race ./internal/replay/ ./internal/schema/ ./internal/journey/ -run 'Integration|RoundTrip|Journey'
 
 .PHONY: lint
 lint: ## golangci-lint v2
