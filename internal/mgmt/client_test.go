@@ -2,6 +2,7 @@ package mgmt
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -179,5 +180,56 @@ func TestPolicies(t *testing.T) {
 	}
 	if p.Definition["dead-letter-exchange"] != "dlx" {
 		t.Fatalf("unexpected definition: %+v", p.Definition)
+	}
+}
+
+func TestForensicsRabbitMQ4Shapes(t *testing.T) {
+	// RabbitMQ 4.x serialises x-death time as unix seconds and
+	// x-first-death as flat header keys.
+	raw := []byte(`{"payload_bytes":3,"payload":"abc","payload_encoding":"string","redelivered":true,
+		"exchange":"","routing_key":"work","message_count":1,
+		"properties":{"headers":{
+			"x-death":[{"count":2,"exchange":"","queue":"work","reason":"expired","routing-keys":["work"],"time":1793422465}],
+			"x-first-death-queue":"work","x-first-death-exchange":"","x-first-death-reason":"expired"
+		}}}`)
+	var msg Message
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	h := HeaderMap(msg.Properties["headers"].(map[string]any))
+	chain := h.DeathChain()
+	if len(chain) != 1 {
+		t.Fatalf("chain: %+v", chain)
+	}
+	want := time.Unix(1793422465, 0).UTC().Format(time.RFC3339)
+	if chain[0].Time != want {
+		t.Fatalf("time: want %q, got %q", want, chain[0].Time)
+	}
+	if pt, ok := parseRMQTime(chain[0].Time); !ok || !pt.Equal(time.Unix(1793422465, 0).UTC()) {
+		t.Fatalf("parsed time: %v ok=%v", pt, ok)
+	}
+	first, ok := h.FirstDeath()
+	if !ok || first.Queue != "work" || first.Exchange != "" || first.Reason != "expired" {
+		t.Fatalf("first death: %+v ok=%v", first, ok)
+	}
+	if _, ok := h.LastDeathTime(); !ok {
+		t.Fatal("want last death time from unix seconds")
+	}
+	last, ok := msg.HeadTime()
+	if !ok || !last.Equal(time.Unix(1793422465, 0).UTC()) {
+		t.Fatalf("head time: %v ok=%v", last, ok)
+	}
+}
+
+func TestMessageEmptyPropertiesArray(t *testing.T) {
+	// RabbitMQ 4.x management API serialises empty maps as empty arrays.
+	raw := []byte(`{"payload_bytes":5,"payload":"hello","payload_encoding":"string","redelivered":false,
+		"exchange":"","routing_key":"work","message_count":1,"properties":[]}`)
+	m, err := decodeMessage(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if m.Properties == nil || len(m.Properties) != 0 || m.Payload != "hello" {
+		t.Fatalf("properties: %+v", m)
 	}
 }

@@ -188,9 +188,17 @@ func (c *Client) Peek(ctx context.Context, vhost, name string, count, truncate i
 	if err != nil {
 		return nil, err
 	}
-	var msgs []Message
-	if err := json.Unmarshal(data, &msgs); err != nil {
+	var raws []json.RawMessage
+	if err := json.Unmarshal(data, &raws); err != nil {
 		return nil, err
+	}
+	msgs := make([]Message, 0, len(raws))
+	for _, raw := range raws {
+		m, err := decodeMessage(raw)
+		if err != nil {
+			return nil, err
+		}
+		msgs = append(msgs, m)
 	}
 	return msgs, nil
 }

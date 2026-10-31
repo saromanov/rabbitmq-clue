@@ -7,11 +7,39 @@ import (
 // DeathStep is one entry of the x-death header chain: the record RabbitMQ
 // appends every time a message is dead-lettered.
 type DeathStep struct {
-	Queue    string `json:"queue"`
-	Reason   string `json:"reason"`
-	Time     string `json:"time"`
-	Exchange string `json:"exchange"`
-	Count    int64  `json:"count"`
+	Queue       string   `json:"queue"`
+	Reason      string   `json:"reason"`
+	Time        string   `json:"time"`
+	Exchange    string   `json:"exchange"`
+	Count       int64    `json:"count"`
+	RoutingKeys []string `json:"routing_keys,omitempty"`
+}
+
+// FirstDeath returns the x-first-death record RabbitMQ adds alongside
+// x-death, falling back to the oldest chain entry (the last one).
+// RabbitMQ 4.x exposes it as flat header keys (x-first-death-queue and
+// friends), older versions as an x-first-death map.
+func (h HeaderMap) FirstDeath() (DeathStep, bool) {
+	if m, ok := h["x-first-death"].(map[string]any); ok {
+		return DeathStep{
+			Queue:       asString(m["queue"]),
+			Reason:      asString(m["reason"]),
+			Exchange:    asString(m["exchange"]),
+			RoutingKeys: asStringSlice(m["routing-keys"]),
+		}, true
+	}
+	if q := asString(h["x-first-death-queue"]); q != "" {
+		return DeathStep{
+			Queue:    q,
+			Reason:   asString(h["x-first-death-reason"]),
+			Exchange: asString(h["x-first-death-exchange"]),
+		}, true
+	}
+	steps := h.DeathChain()
+	if len(steps) == 0 {
+		return DeathStep{}, false
+	}
+	return steps[len(steps)-1], true
 }
 
 // HeaderMap is a permissive accessor over AMQP header maps, which may hold
@@ -31,16 +59,33 @@ func (h HeaderMap) DeathChain() []DeathStep {
 		if !ok {
 			continue
 		}
-		step := DeathStep{
-			Queue:    asString(m["queue"]),
-			Reason:   asString(m["reason"]),
-			Time:     asString(m["time"]),
-			Exchange: asString(m["exchange"]),
-			Count:    asInt64(m["count"]),
-		}
-		steps = append(steps, step)
+		steps = append(steps, DeathStep{
+			Queue:       asString(m["queue"]),
+			Reason:      asString(m["reason"]),
+			Time:        deathTime(m["time"]),
+			Exchange:    asString(m["exchange"]),
+			Count:       asInt64(m["count"]),
+			RoutingKeys: asStringSlice(m["routing-keys"]),
+		})
 	}
 	return steps
+}
+
+// deathTime normalises the x-death entry time to an RFC3339 string. Older
+// brokers send formatted strings, RabbitMQ 4.x sends unix seconds.
+func deathTime(v any) string {
+	if s := asString(v); s != "" {
+		return s
+	}
+	switch n := v.(type) {
+	case float64:
+		return time.Unix(int64(n), 0).UTC().Format(time.RFC3339)
+	case int:
+		return time.Unix(int64(n), 0).UTC().Format(time.RFC3339)
+	case int64:
+		return time.Unix(n, 0).UTC().Format(time.RFC3339)
+	}
+	return ""
 }
 
 // TotalDeaths sums the per-queue death counts of the chain.
@@ -125,6 +170,23 @@ func asString(v any) string {
 		return s
 	}
 	return ""
+}
+
+func asStringSlice(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func asInt64(v any) int64 {

@@ -267,3 +267,111 @@ func TestTopologyDiffBadSide(t *testing.T) {
 		t.Fatalf("want 400 for unknown conn, got %d", rec.Code)
 	}
 }
+
+func TestPeekJourney(t *testing.T) {
+	msgs := `[
+		{"payload_bytes":12,"payload":"hello world!","payload_encoding":"string","redelivered":true,
+		 "exchange":"work","routing_key":"jobs","message_count":3,
+		 "properties":{"content_type":"application/json",
+			"headers":{
+				"x-death":[
+					{"queue":"dlq","reason":"rejected","count":1,"time":"2026-10-25T10:00:00Z","exchange":"work","routing-keys":["jobs"]},
+					{"queue":"retry","reason":"expired","count":2,"time":"2026-10-25T09:00:00Z","exchange":"retry","routing-keys":["jobs"]},
+					{"queue":"work","reason":"rejected","count":1,"time":"2026-10-25T08:00:00Z","exchange":"main","routing-keys":["jobs"]}
+				],
+				"x-first-death":{"queue":"work","exchange":"main","routing-keys":["jobs"],"reason":"rejected"}
+			}}}
+	]`
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() == "/api/queues/%2F/dlq/get" {
+			_, _ = w.Write([]byte(msgs))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer fake.Close()
+	srv := New(testConfig(t, fake.URL, false))
+
+	body := `{"conn":"test","vhost":"/","name":"dlq","count":1}`
+	rec := httptest.NewRecorder()
+	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/queues/peek", strings.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("peek: %d %s", rec.Code, rec.Body.String())
+	}
+	var out []struct {
+		Exchange string `json:"exchange"`
+		Journey  *struct {
+			OriginQueue    string   `json:"origin_queue"`
+			OriginExchange string   `json:"origin_exchange"`
+			OriginKeys     []string `json:"origin_routing_keys"`
+			CurrentQueue   string   `json:"current_queue"`
+			Hops           []struct {
+				Queue  string `json:"queue"`
+				Reason string `json:"reason"`
+				Count  int64  `json:"count"`
+			} `json:"hops"`
+			TotalDeaths int64 `json:"total_deaths"`
+			Retries     int64 `json:"retries"`
+			Ladders     []struct {
+				Queue    string   `json:"queue"`
+				Attempts int64    `json:"attempts"`
+				Reasons  []string `json:"reasons"`
+				Cycle    bool     `json:"cycle"`
+			} `json:"ladders"`
+			LastDeathTime string  `json:"last_death_time"`
+			AgeSec        float64 `json:"age_sec"`
+		} `json:"journey"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(out) != 1 || out[0].Journey == nil {
+		t.Fatalf("want one message with journey, got %s", rec.Body.String())
+	}
+	j := out[0].Journey
+	if j.OriginQueue != "work" || j.OriginExchange != "main" {
+		t.Fatalf("origin: %+v", j)
+	}
+	if len(j.OriginKeys) != 1 || j.OriginKeys[0] != "jobs" {
+		t.Fatalf("origin keys: %v", j.OriginKeys)
+	}
+	if j.CurrentQueue != "dlq" {
+		t.Fatalf("current queue: %q", j.CurrentQueue)
+	}
+	if len(j.Hops) != 3 || j.Hops[0].Queue != "work" || j.Hops[2].Queue != "dlq" {
+		t.Fatalf("hops: %+v", j.Hops)
+	}
+	if j.TotalDeaths != 4 || j.Retries != 1 {
+		t.Fatalf("totals: deaths=%d retries=%d", j.TotalDeaths, j.Retries)
+	}
+	if len(j.Ladders) != 1 || j.Ladders[0].Queue != "retry" || j.Ladders[0].Attempts != 2 || !j.Ladders[0].Cycle {
+		t.Fatalf("ladders: %+v", j.Ladders)
+	}
+	if j.LastDeathTime == "" || j.AgeSec <= 0 {
+		t.Fatalf("last death: %q age=%v", j.LastDeathTime, j.AgeSec)
+	}
+}
+
+func TestPeekNoJourneyField(t *testing.T) {
+	msgs := `[{"payload_bytes":5,"payload":"hello","payload_encoding":"string","redelivered":false,
+		"exchange":"","routing_key":"jobs","message_count":1,"properties":{}}]`
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() == "/api/queues/%2F/work/get" {
+			_, _ = w.Write([]byte(msgs))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer fake.Close()
+	srv := New(testConfig(t, fake.URL, false))
+
+	rec := httptest.NewRecorder()
+	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/queues/peek",
+		strings.NewReader(`{"conn":"test","vhost":"/","name":"work","count":1}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("peek: %d %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"journey"`) {
+		t.Fatalf("journey must be omitted for non dead-lettered messages: %s", rec.Body.String())
+	}
+}

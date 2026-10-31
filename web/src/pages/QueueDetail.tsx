@@ -5,6 +5,7 @@ import {
   deathCount,
   extractDeathChain,
   originQueue,
+  type Journey,
   type PeekedMessage,
   type Scope,
 } from "../api";
@@ -427,6 +428,63 @@ function suggestOriginText(name: string): string {
   return name;
 }
 
+function ageOf(j: Journey): string {
+  const sec = j.age_sec;
+  if (sec === undefined || sec < 0) return "";
+  if (sec < 60) return `${Math.round(sec)}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+  return `${Math.floor(sec / 86400)}d ${Math.floor((sec % 86400) / 3600)}h`;
+}
+
+function JourneyView({ journey }: { journey: Journey }) {
+  const age = ageOf(journey);
+  return (
+    <div>
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Message journey</div>
+        {(journey.ladders ?? []).map((l) => (
+          <span
+            key={l.queue}
+            className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+            title={l.cycle ? "Same queue and reason every time — TTL+DLX retry ladder" : "Repeated deaths on this queue with mixed reasons"}
+          >
+            retry ladder: {l.attempts} attempts on {l.queue}
+            {l.cycle ? " (cycle)" : ""}
+          </span>
+        ))}
+      </div>
+      <ol className="space-y-1 text-xs">
+        {(journey.hops ?? []).map((h, i) => (
+          <li key={i} className="rounded bg-zinc-100 px-2 py-1 dark:bg-zinc-800">
+            <span className="font-mono">{h.queue}</span>
+            {h.reason && <span className="ml-1 rounded bg-zinc-200 px-1 dark:bg-zinc-700">{h.reason}</span>}
+            <span className="ml-1 text-zinc-500">
+              {h.count > 1 ? `×${h.count}` : null}
+              {h.time ? ` · ${h.time}` : ""}
+              {h.exchange !== undefined && h.exchange !== "" ? ` · via ${h.exchange}` : h.exchange === "" ? " · via (default)" : ""}
+              {h.routing_keys && h.routing_keys.length > 0 ? ` / ${h.routing_keys.join(", ")}` : ""}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-1 text-xs text-zinc-500">
+        origin: <span className="font-mono">{journey.origin_queue || "?"}</span>
+        {journey.origin_exchange !== undefined
+          ? ` via ${journey.origin_exchange || "(default)"}`
+          : ""}
+        {journey.origin_routing_keys && journey.origin_routing_keys.length > 0
+          ? ` / ${journey.origin_routing_keys.join(", ")}`
+          : ""}
+        {" · "}
+        {journey.total_deaths} death{journey.total_deaths === 1 ? "" : "s"}
+        {journey.retries > 0 ? ` (${journey.retries} retr${journey.retries === 1 ? "y" : "ies"})` : ""}
+        {journey.current_queue && age ? ` · stuck in ${journey.current_queue} for ${age}` : journey.current_queue ? ` · now in ${journey.current_queue}` : ""}
+      </div>
+    </div>
+  );
+}
+
 function MessageView({
   msg,
   onRepublish,
@@ -456,7 +514,9 @@ function MessageView({
         </button>
       </div>
       {republishError && <div className="text-xs text-red-600 dark:text-red-400">{republishError}</div>}
-      {chain.length > 0 && (
+      {msg.journey ? (
+        <JourneyView journey={msg.journey} />
+      ) : chain.length > 0 && (
         <div>
           <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Dead-letter history</div>
           <ol className="space-y-1 text-xs">

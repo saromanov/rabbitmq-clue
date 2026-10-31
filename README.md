@@ -42,6 +42,7 @@ rabbitmq-clue does these things in a browser, with confirmations, dry runs and a
 
 - **Dead-letter replay** — bulk replay from any queue with filters (payload substring, header match), dry-run mode, automatic target detection from `x-death`, optional `x-death` stripping, and live progress with cancel. Every message is published with publisher confirms *before* the source is acked, so a crash mid-replay never loses messages.
 - **Message inspection** — batched peek with the requeue caveat shown honestly, pretty JSON payloads, full AMQP properties, and a dead-letter history panel (the `x-death` chain: which queue, which reason, how many times).
+- **Message journey** — reconstructs a dead-lettered message's full path from `x-death` (hops between queues with reasons, counts and timestamps), detects retry ladders — the TTL+DLX exponential backoff topology — and shows where the message is stuck and for how long.
 - **Backlog age estimation** — computes how old the head message of a queue is from its timestamp or `x-death` records — including for quorum queues, which the broker doesn't report this for.
 - **Republish** — take a peeked message, edit it, send it back through its original exchange/routing key.
 - **Publish** — a real publish form: headers, all AMQP properties, persistent/transient, publisher confirms.

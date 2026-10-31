@@ -75,6 +75,36 @@ export interface DeathStep {
   time: string;
   exchange: string;
   count: number;
+  routing_keys?: string[];
+}
+
+export interface JourneyHop {
+  queue: string;
+  reason?: string;
+  count: number;
+  time?: string;
+  exchange?: string;
+  routing_keys?: string[];
+}
+
+export interface JourneyLadder {
+  queue: string;
+  attempts: number;
+  reasons?: string[];
+  cycle: boolean;
+}
+
+export interface Journey {
+  origin_queue?: string;
+  origin_exchange?: string;
+  origin_routing_keys?: string[];
+  current_queue?: string;
+  hops?: JourneyHop[];
+  total_deaths: number;
+  retries: number;
+  ladders?: JourneyLadder[];
+  last_death_time?: string;
+  age_sec?: number;
 }
 
 export interface PeekedMessage {
@@ -95,6 +125,7 @@ export interface PeekedMessage {
   decoded_type?: string;
   unwrapped?: boolean;
   decode_error?: string;
+  journey?: Journey;
 }
 
 export interface SchemaBinding {
