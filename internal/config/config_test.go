@@ -28,6 +28,28 @@ func TestLoadFromEnv(t *testing.T) {
 	if len(cfg.Connections) != 1 || cfg.Connections[0].Name != "default" {
 		t.Fatalf("connections: %+v", cfg.Connections)
 	}
+	if cfg.AuditFile != "" || cfg.AuditUserHeader != "" {
+		t.Fatalf("audit defaults: %+v", cfg)
+	}
+}
+
+func TestLoadAuditEnv(t *testing.T) {
+	t.Setenv("RMQ_CLUE_MGMT_URL", "http://localhost:15672")
+	t.Setenv("RMQ_CLUE_AMQP_URL", "amqp://localhost:5672")
+	t.Setenv("RMQ_CLUE_AUDIT_FILE", "/var/log/clue/audit.jsonl")
+	t.Setenv("RMQ_CLUE_AUDIT_USER_HEADER", "X-Forwarded-User")
+	os.Unsetenv("RMQ_CLUE_CONNECTIONS_FILE")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AuditFile != "/var/log/clue/audit.jsonl" {
+		t.Fatalf("audit file: %q", cfg.AuditFile)
+	}
+	if cfg.AuditUserHeader != "X-Forwarded-User" {
+		t.Fatalf("audit user header: %q", cfg.AuditUserHeader)
+	}
 }
 
 func TestLoadPartialEnvFails(t *testing.T) {

@@ -11,6 +11,16 @@ import (
 	"github.com/saromanov/rabbitmq-clue/internal/config"
 )
 
+// mustNew builds a server or fails the test.
+func mustNew(t *testing.T, cfg *config.Config) *Server {
+	t.Helper()
+	srv, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return srv
+}
+
 func fakeMgmt(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +59,7 @@ func testConfig(t *testing.T, mgmtURL string, readOnly bool) *config.Config {
 }
 
 func TestHealthAndConnections(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/health", nil))
 	if rec.Code != http.StatusOK {
@@ -70,7 +80,7 @@ func TestHealthAndConnections(t *testing.T) {
 func TestQueuesProxied(t *testing.T) {
 	fake := fakeMgmt(t)
 	defer fake.Close()
-	srv := New(testConfig(t, fake.URL, false))
+	srv := mustNew(t, testConfig(t, fake.URL, false))
 
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/queues?vhost=%2F", nil))
@@ -87,7 +97,7 @@ func TestQueuesProxied(t *testing.T) {
 }
 
 func TestUnknownConnection(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/queues?conn=ghost", nil))
 	if rec.Code != http.StatusBadRequest {
@@ -96,7 +106,7 @@ func TestUnknownConnection(t *testing.T) {
 }
 
 func TestReadOnlyGuard(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", true))
+	srv := mustNew(t, testConfig(t, "http://unused", true))
 	for _, path := range []string{"/api/queues/purge", "/api/replay", "/api/publish"} {
 		rec := httptest.NewRecorder()
 		srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
@@ -115,7 +125,7 @@ func TestReadOnlyGuard(t *testing.T) {
 func TestReplayJobLifecycle(t *testing.T) {
 	fake := fakeMgmt(t)
 	defer fake.Close()
-	srv := New(testConfig(t, fake.URL, false))
+	srv := mustNew(t, testConfig(t, fake.URL, false))
 
 	body := `{"conn":"test","vhost":"/","source_queue":"dlq","target_queue":"work","dry_run":true}`
 	rec := httptest.NewRecorder()
@@ -153,7 +163,7 @@ func TestReplayJobLifecycle(t *testing.T) {
 func TestPeekValidation(t *testing.T) {
 	fake := fakeMgmt(t)
 	defer fake.Close()
-	srv := New(testConfig(t, fake.URL, false))
+	srv := mustNew(t, testConfig(t, fake.URL, false))
 
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/queues/peek", strings.NewReader("{bad json")))
@@ -165,7 +175,7 @@ func TestPeekValidation(t *testing.T) {
 func TestTopologySnapshot(t *testing.T) {
 	fake := fakeMgmt(t)
 	defer fake.Close()
-	srv := New(testConfig(t, fake.URL, false))
+	srv := mustNew(t, testConfig(t, fake.URL, false))
 
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/topology/snapshot?vhost=%2F", nil))
@@ -189,7 +199,7 @@ func TestTopologySnapshot(t *testing.T) {
 }
 
 func TestTopologySnapshotUnknownConn(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/topology/snapshot?conn=ghost&vhost=%2F", nil))
 	if rec.Code != http.StatusBadRequest {
@@ -200,7 +210,7 @@ func TestTopologySnapshotUnknownConn(t *testing.T) {
 // TestTopologyDiffInline compares two uploaded snapshots without touching
 // a broker, in JSON and text formats.
 func TestTopologyDiffInline(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 
 	body := `{"from": {"snapshot": {"format": "rabbitmq-clue.topology", "version": 1, "source": "dev", "vhost": "/",
 		"queues": [{"name": "work", "type": "classic", "durable": true, "arguments": {}}]}},
@@ -252,7 +262,7 @@ func TestTopologyDiffInline(t *testing.T) {
 }
 
 func TestTopologyDiffBadSide(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/topology/diff",
 		strings.NewReader(`{"from": {"snapshot": {"format": "other", "version": 9}}, "to": {"snapshot": {"format": "other", "version": 9}}}`)))
@@ -290,7 +300,7 @@ func TestPeekJourney(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer fake.Close()
-	srv := New(testConfig(t, fake.URL, false))
+	srv := mustNew(t, testConfig(t, fake.URL, false))
 
 	body := `{"conn":"test","vhost":"/","name":"dlq","count":1}`
 	rec := httptest.NewRecorder()
@@ -363,7 +373,7 @@ func TestPeekNoJourneyField(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer fake.Close()
-	srv := New(testConfig(t, fake.URL, false))
+	srv := mustNew(t, testConfig(t, fake.URL, false))
 
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/queues/peek",

@@ -126,6 +126,35 @@ func TestJobLifecyclesToFailed(t *testing.T) {
 	}
 }
 
+func TestOnFinishCallback(t *testing.T) {
+	e := NewEngine()
+	ch := make(chan Job, 1)
+	e.SetOnFinish(func(j Job) { ch <- j })
+	// Port 1 is unreachable: the dial must fail and finish the job.
+	id, err := e.Start("amqp://127.0.0.1:1/%2F", Spec{SourceQueue: "dlq", TargetQueue: "work"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	select {
+	case j := <-ch:
+		if j.ID != id || j.Status != "failed" {
+			t.Fatalf("want failed job %q, got %+v", id, j)
+		}
+		if j.EndedAt == nil {
+			t.Fatal("want ended_at on callback")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("onFinish was not called")
+	}
+	job, ok := waitStatus(t, e, id, "failed")
+	if !ok {
+		return
+	}
+	if len(job.Errors) == 0 {
+		t.Fatal("want recorded error")
+	}
+}
+
 func waitStatus(t *testing.T, e *Engine, id, want string) (Job, bool) {
 	t.Helper()
 	for i := 0; i < 200; i++ {

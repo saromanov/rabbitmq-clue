@@ -27,7 +27,12 @@ func main() {
 		slog.Error("embedded UI is broken", "err", err)
 		os.Exit(1)
 	}
-	handler := api.New(cfg).Handler(dist)
+	srv, err := api.New(cfg)
+	if err != nil {
+		slog.Error("server initialization error", "err", err)
+		os.Exit(1)
+	}
+	handler := srv.Handler(dist)
 
 	slog.Info("rabbitmq-clue starting",
 		"addr", cfg.Addr,
