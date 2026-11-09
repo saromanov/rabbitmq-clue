@@ -359,6 +359,44 @@ export interface TopologySide {
   snapshot?: TopologySnapshot;
 }
 
+export interface AuditFilter {
+  kind: string;
+  value: string;
+  header?: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  time: string;
+  ended_at?: string | null;
+  user: string;
+  remote?: string;
+  operation: "replay" | "purge" | "publish";
+  conn?: string;
+  vhost?: string;
+  queue?: string;
+  target_queue?: string;
+  target_exchange?: string;
+  target_routing_key?: string;
+  filters?: AuditFilter[];
+  dry_run?: boolean;
+  limit?: number;
+  messages?: number;
+  succeeded?: number;
+  skipped?: number;
+  failed?: number;
+  status: "running" | "completed" | "cancelled" | "failed";
+  error?: string;
+  job_id?: string;
+}
+
+export interface AuditQuery {
+  operation?: string;
+  queue?: string;
+  user?: string;
+  limit?: number;
+}
+
 export const api = {
   connections: () => request<ConnectionInfo[]>("/connections"),
   overview: (conn: string) => request<Overview>(`/overview?conn=${encodeURIComponent(conn)}`),
@@ -406,6 +444,15 @@ export const api = {
   topologySnapshot: (conn: string, vhost: string) =>
     request<TopologySnapshot>(`/topology/snapshot?conn=${encodeURIComponent(conn)}&vhost=${encodeURIComponent(vhost)}`),
   topologyDiff: (from: TopologySide, to: TopologySide) => post<TopologyReport>("/topology/diff", { from, to }),
+  audit: (query?: AuditQuery) => {
+    const q = new URLSearchParams();
+    if (query?.operation) q.set("operation", query.operation);
+    if (query?.queue) q.set("queue", query.queue);
+    if (query?.user) q.set("user", query.user);
+    if (query?.limit) q.set("limit", String(query.limit));
+    const suffix = q.toString() ? `?${q.toString()}` : "";
+    return request<AuditEntry[]>(`/audit${suffix}`);
+  },
 };
 
 export function extractDeathChain(msg: PeekedMessage): DeathStep[] {
