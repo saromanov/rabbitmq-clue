@@ -42,32 +42,41 @@ type Filter struct {
 
 // Entry is one audited operation. It is created when the operation
 // starts and, for long-running replays, updated once when it ends.
-// Semantics of the count fields per operation:
+// Semantics of the fields per operation:
 //
-//   - purge:   Messages is the queue depth observed right before the purge.
-//   - publish: Messages is always 1 (or 0 when the count is unknown).
-//   - replay:  Messages is the processed total, plus Succeeded/Skipped/Failed.
+//   - purge:   Queue is the purged queue; Messages is the queue depth
+//     observed right before the purge.
+//   - publish: Queue is the routing key, TargetExchange the published
+//     exchange; Messages is 1.
+//   - replay:  Queue is the source queue, Target* the destination;
+//     Messages is the processed total, plus Succeeded/Skipped/Failed.
 type Entry struct {
-	ID        string     `json:"id"`
-	Time      time.Time  `json:"time"`
-	EndedAt   *time.Time `json:"ended_at,omitempty"`
-	User      string     `json:"user"`
-	Remote    string     `json:"remote,omitempty"`
-	Operation string     `json:"operation"`
-	Conn      string     `json:"conn,omitempty"`
-	VHost     string     `json:"vhost,omitempty"`
-	Queue     string     `json:"queue,omitempty"`
-	Target    string     `json:"target,omitempty"`
-	Filters   []Filter   `json:"filters,omitempty"`
-	DryRun    bool       `json:"dry_run,omitempty"`
-	Limit     int        `json:"limit,omitempty"`
-	Messages  int64      `json:"messages,omitempty"`
-	Succeeded int64      `json:"succeeded,omitempty"`
-	Skipped   int64      `json:"skipped,omitempty"`
-	Failed    int64      `json:"failed,omitempty"`
-	Status    string     `json:"status"`
-	Error     string     `json:"error,omitempty"`
-	JobID     string     `json:"job_id,omitempty"`
+	ID      string     `json:"id"`
+	Time    time.Time  `json:"time"`
+	EndedAt *time.Time `json:"ended_at,omitempty"`
+	User    string     `json:"user"`
+	Remote  string     `json:"remote,omitempty"`
+
+	Operation string `json:"operation"`
+	Conn      string `json:"conn,omitempty"`
+	VHost     string `json:"vhost,omitempty"`
+	Queue     string `json:"queue,omitempty"`
+
+	TargetQueue      string `json:"target_queue,omitempty"`
+	TargetExchange   string `json:"target_exchange,omitempty"`
+	TargetRoutingKey string `json:"target_routing_key,omitempty"`
+
+	Filters   []Filter `json:"filters,omitempty"`
+	DryRun    bool     `json:"dry_run,omitempty"`
+	Limit     int      `json:"limit,omitempty"`
+	Messages  int64    `json:"messages,omitempty"`
+	Succeeded int64    `json:"succeeded,omitempty"`
+	Skipped   int64    `json:"skipped,omitempty"`
+	Failed    int64    `json:"failed,omitempty"`
+
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+	JobID  string `json:"job_id,omitempty"`
 }
 
 // DefaultMaxEntries bounds the in-memory ring when no explicit size is set.

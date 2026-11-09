@@ -47,7 +47,7 @@ func saveFixtureSchema(t *testing.T, srv *Server) schema.SchemaMeta {
 }
 
 func TestCompileSchemaEndpoint(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 	rec := httptest.NewRecorder()
 	body := `{"files":{"test.proto":` + jsonQuote(schemaFixtureProto) + `},"message_type":"clue.api.test.v1.Address"}`
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/schemas/compile", strings.NewReader(body)))
@@ -77,7 +77,7 @@ func jsonQuote(s string) string {
 }
 
 func TestCompileSchemaBadProto(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/schemas/compile", strings.NewReader(`{"files":{"a.proto":"garbage"}}`)))
 	if rec.Code != http.StatusBadRequest {
@@ -86,7 +86,7 @@ func TestCompileSchemaBadProto(t *testing.T) {
 }
 
 func TestSchemaCRUDLifecycle(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 	h := srv.Handler(nil)
 	meta := saveFixtureSchema(t, srv)
 
@@ -140,7 +140,7 @@ func TestSchemaCRUDLifecycle(t *testing.T) {
 }
 
 func TestCreateSchemaUnknownMessageType(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 	rec := httptest.NewRecorder()
 	body := map[string]any{
 		"name":         "x",
@@ -155,7 +155,7 @@ func TestCreateSchemaUnknownMessageType(t *testing.T) {
 }
 
 func TestSchemaReadOnlyGuard(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", true))
+	srv := mustNew(t, testConfig(t, "http://unused", true))
 	rec := httptest.NewRecorder()
 	body := map[string]any{
 		"name":         "x",
@@ -170,7 +170,7 @@ func TestSchemaReadOnlyGuard(t *testing.T) {
 }
 
 func TestPublishProtoValidation(t *testing.T) {
-	srv := New(testConfig(t, "http://unused", false))
+	srv := mustNew(t, testConfig(t, "http://unused", false))
 	h := srv.Handler(nil)
 	meta := saveFixtureSchema(t, srv)
 
@@ -214,7 +214,7 @@ func TestPeekWithSchema(t *testing.T) {
 	}))
 	defer fake.Close()
 
-	srv := New(testConfig(t, fake.URL, false))
+	srv := mustNew(t, testConfig(t, fake.URL, false))
 	meta := saveFixtureSchema(t, srv)
 
 	rec := httptest.NewRecorder()
@@ -254,7 +254,7 @@ func TestPeekWithoutSchemaUnchanged(t *testing.T) {
 	}))
 	defer fake.Close()
 
-	srv := New(testConfig(t, fake.URL, false))
+	srv := mustNew(t, testConfig(t, fake.URL, false))
 	rec := httptest.NewRecorder()
 	srv.Handler(nil).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/queues/peek", strings.NewReader(`{"name":"work","vhost":"/"}`)))
 	if rec.Code != http.StatusOK {

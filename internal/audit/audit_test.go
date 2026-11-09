@@ -84,7 +84,7 @@ func TestFilePersistenceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := s1.Record(Entry{Operation: OpPurge, Queue: "q1", Status: StatusCompleted})
-	running := s1.Record(Entry{Operation: OpReplay, Queue: "q1", Target: "q2", Status: StatusRunning})
+	running := s1.Record(Entry{Operation: OpReplay, Queue: "q1", TargetQueue: "q2", Status: StatusRunning})
 	s1.Update(running.ID, func(e *Entry) {
 		e.Status = StatusCompleted
 		e.Succeeded = 3

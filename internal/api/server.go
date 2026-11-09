@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/saromanov/rabbitmq-clue/internal/amqpop"
+	"github.com/saromanov/rabbitmq-clue/internal/audit"
 	"github.com/saromanov/rabbitmq-clue/internal/config"
 	"github.com/saromanov/rabbitmq-clue/internal/mgmt"
 	"github.com/saromanov/rabbitmq-clue/internal/replay"
@@ -29,18 +31,28 @@ type Server struct {
 	cfg      *config.Config
 	engine   *replay.Engine
 	store    *schema.Store
+	audit    *audit.Store
 	mgmtOnce sync.Once
 	mgmts    map[string]*mgmt.Client
 }
 
-// New builds the API server.
-func New(cfg *config.Config) *Server {
-	return &Server{
+// New builds the API server. It fails when the configured audit file
+// cannot be opened: an operator who asked for an audit trail must not
+// get a silently memory-only server.
+func New(cfg *config.Config) (*Server, error) {
+	auditStore, err := audit.NewStore(audit.DefaultMaxEntries, cfg.AuditFile)
+	if err != nil {
+		return nil, err
+	}
+	s := &Server{
 		cfg:    cfg,
 		engine: replay.NewEngine(),
 		store:  schema.NewStore(cfg.SchemasDir),
+		audit:  auditStore,
 		mgmts:  map[string]*mgmt.Client{},
 	}
+	s.engine.SetOnFinish(s.onReplayFinish)
+	return s, nil
 }
 
 // Handler assembles all routes.
@@ -63,6 +75,7 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	r.Get("/api/replay/jobs", s.handleReplayJobs)
 	r.Get("/api/replay/jobs/{id}", s.handleReplayJob)
 	r.Post("/api/replay/jobs/{id}/cancel", s.handleReplayCancel)
+	r.Get("/api/audit", s.handleAudit)
 	r.Post("/api/publish", s.guardMutation(s.handlePublish))
 	r.Post("/api/publish/proto", s.guardMutation(s.handlePublishProto))
 	r.Get("/api/schemas", s.handleListSchemas)
@@ -92,6 +105,77 @@ func (s *Server) guardMutation(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// auditActor resolves who performed a request. When AuditUserHeader is
+// configured (behind an authenticating proxy), the header value is the
+// user identity; otherwise the client IP is the best available actor.
+func (s *Server) auditActor(r *http.Request) (user, remote string) {
+	remote = r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		remote = host
+	}
+	if s.cfg.AuditUserHeader != "" {
+		if u := strings.TrimSpace(r.Header.Get(s.cfg.AuditUserHeader)); u != "" {
+			return u, remote
+		}
+	}
+	return remote, remote
+}
+
+// auditEntry seeds an audit entry with the actor of the request.
+func (s *Server) auditEntry(r *http.Request) audit.Entry {
+	user, remote := s.auditActor(r)
+	return audit.Entry{User: user, Remote: remote}
+}
+
+// recordFailure stores a failed operation entry.
+func (s *Server) recordFailure(entry audit.Entry, err error) {
+	entry.Status = audit.StatusFailed
+	entry.Error = err.Error()
+	s.audit.Record(entry)
+}
+
+// onReplayFinish folds the final job state into its audit entry.
+func (s *Server) onReplayFinish(job replay.Job) {
+	_, _ = s.audit.Update(job.ID, func(e *audit.Entry) {
+		e.Status = job.Status
+		e.EndedAt = job.EndedAt
+		e.Messages = job.Progress.Processed
+		e.Succeeded = job.Progress.Succeeded
+		e.Skipped = job.Progress.Skipped
+		e.Failed = job.Progress.Failed
+		if len(job.Errors) > 0 {
+			e.Error = job.Errors[0]
+		}
+	})
+}
+
+// handleAudit serves the operation audit log, newest first. Optional
+// filters: operation, queue, user, limit.
+func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	entries := s.audit.List()
+	if operation, queue, user := q.Get("operation"), q.Get("queue"), q.Get("user"); operation != "" || queue != "" || user != "" {
+		filtered := make([]audit.Entry, 0, len(entries))
+		for _, e := range entries {
+			if operation != "" && e.Operation != operation {
+				continue
+			}
+			if queue != "" && e.Queue != queue {
+				continue
+			}
+			if user != "" && e.User != user {
+				continue
+			}
+			filtered = append(filtered, e)
+		}
+		entries = filtered
+	}
+	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v < len(entries) {
+		entries = entries[:v]
+	}
+	writeJSON(w, http.StatusOK, entries)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -377,10 +461,23 @@ func (s *Server) handlePurge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.mgmtClient(conn).Purge(r.Context(), req.VHost, req.Name); err != nil {
+	client := s.mgmtClient(conn)
+	entry := s.auditEntry(r)
+	entry.Operation = audit.OpPurge
+	entry.Conn = conn.Name
+	entry.VHost = req.VHost
+	entry.Queue = req.Name
+	// Best-effort depth snapshot: the purge API itself reports no count.
+	if q, err := client.Queue(r.Context(), req.VHost, req.Name); err == nil {
+		entry.Messages = int64(q.Messages)
+	}
+	if err := client.Purge(r.Context(), req.VHost, req.Name); err != nil {
+		s.recordFailure(entry, err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	entry.Status = audit.StatusCompleted
+	s.audit.Record(entry)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "purged"})
 }
 
@@ -405,7 +502,34 @@ func (s *Server) handleReplay(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	entry := s.auditEntry(r)
+	entry.ID = id
+	entry.JobID = id
+	entry.Operation = audit.OpReplay
+	entry.Conn = conn.Name
+	entry.VHost = req.Spec.VHost
+	entry.Queue = req.Spec.SourceQueue
+	entry.TargetQueue = req.Spec.TargetQueue
+	entry.TargetExchange = req.Spec.TargetExchange
+	entry.TargetRoutingKey = req.Spec.TargetKey
+	entry.DryRun = req.Spec.DryRun
+	entry.Limit = req.Spec.Limit
+	entry.Filters = auditFilters(req.Spec.Filters)
+	entry.Status = audit.StatusRunning
+	s.audit.Record(entry)
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": id})
+}
+
+// auditFilters copies replay filters into the audit representation.
+func auditFilters(fs []replay.Filter) []audit.Filter {
+	if len(fs) == 0 {
+		return nil
+	}
+	out := make([]audit.Filter, len(fs))
+	for i, f := range fs {
+		out[i] = audit.Filter{Kind: f.Kind, Value: f.Value, Header: f.Header}
+	}
+	return out
 }
 
 func (s *Server) handleReplayJobs(w http.ResponseWriter, _ *http.Request) {
@@ -451,8 +575,16 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	entry := s.auditEntry(r)
+	entry.Operation = audit.OpPublish
+	entry.Conn = conn.Name
+	entry.VHost = req.VHost
+	entry.Queue = req.RoutingKey
+	entry.TargetExchange = req.Exchange
+	entry.Messages = 1
 	session, err := amqpop.Dial(conn.AMQPURL)
 	if err != nil {
+		s.recordFailure(entry, err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -460,9 +592,12 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	if err := session.Publish(ctx, req.Publishing, true); err != nil {
+		s.recordFailure(entry, err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	entry.Status = audit.StatusCompleted
+	s.audit.Record(entry)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "published"})
 }
 

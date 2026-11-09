@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/saromanov/rabbitmq-clue/internal/amqpop"
+	"github.com/saromanov/rabbitmq-clue/internal/audit"
 	"github.com/saromanov/rabbitmq-clue/internal/journey"
 	"github.com/saromanov/rabbitmq-clue/internal/mgmt"
 	"github.com/saromanov/rabbitmq-clue/internal/schema"
@@ -293,8 +294,16 @@ func (s *Server) handlePublishProto(w http.ResponseWriter, r *http.Request) {
 	if req.ContentType != "" {
 		contentType = req.ContentType
 	}
+	entry := s.auditEntry(r)
+	entry.Operation = audit.OpPublish
+	entry.Conn = conn.Name
+	entry.VHost = req.VHost
+	entry.Queue = req.RoutingKey
+	entry.TargetExchange = req.Exchange
+	entry.Messages = 1
 	session, err := amqpop.Dial(conn.AMQPURL)
 	if err != nil {
+		s.recordFailure(entry, err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -310,9 +319,12 @@ func (s *Server) handlePublishProto(w http.ResponseWriter, r *http.Request) {
 		DeliveryMode: req.DeliveryMode,
 		Priority:     req.Priority,
 	}, true); err != nil {
+		s.recordFailure(entry, err)
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	entry.Status = audit.StatusCompleted
+	s.audit.Record(entry)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "published"})
 }
 
