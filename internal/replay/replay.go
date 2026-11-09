@@ -79,14 +79,36 @@ func (j *Job) markEnded() {
 // Engine creates and tracks replay jobs. Jobs mutate their own Job struct;
 // the API layer reads it for polling, guarded by the engine mutex.
 type Engine struct {
-	mu    sync.RWMutex
-	jobs  map[string]*Job
-	order []string
+	mu       sync.RWMutex
+	jobs     map[string]*Job
+	order    []string
+	onFinish func(Job)
 }
 
 // NewEngine returns an empty replay engine.
 func NewEngine() *Engine {
 	return &Engine{jobs: map[string]*Job{}}
+}
+
+// SetOnFinish registers a callback invoked with a copy of the job when
+// its goroutine exits (completed, cancelled or failed). It must be
+// called before Start.
+func (e *Engine) SetOnFinish(fn func(Job)) {
+	e.onFinish = fn
+}
+
+// notifyFinish calls the finish callback with a copy of the job, never
+// while holding the engine lock.
+func (e *Engine) notifyFinish(job *Job) {
+	if e.onFinish == nil {
+		return
+	}
+	e.mu.RLock()
+	snapshot := *job
+	e.mu.RUnlock()
+	if snapshot.Status != "running" {
+		e.onFinish(snapshot)
+	}
 }
 
 // Start launches a replay in a background goroutine and returns its id.
@@ -153,6 +175,7 @@ func (e *Engine) running(job *Job) bool {
 }
 
 func (e *Engine) run(job *Job) {
+	defer e.notifyFinish(job)
 	ctx := context.Background()
 	session, err := amqpop.Dial(job.AMQPURL)
 	if err != nil {
