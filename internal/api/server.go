@@ -507,13 +507,13 @@ func (s *Server) handleReplay(w http.ResponseWriter, r *http.Request) {
 	entry.JobID = id
 	entry.Operation = audit.OpReplay
 	entry.Conn = conn.Name
-	entry.VHost = req.Spec.VHost
-	entry.Queue = req.Spec.SourceQueue
-	entry.TargetQueue = req.Spec.TargetQueue
-	entry.TargetExchange = req.Spec.TargetExchange
-	entry.TargetRoutingKey = req.Spec.TargetKey
-	entry.DryRun = req.Spec.DryRun
-	entry.Limit = req.Spec.Limit
+	entry.VHost = req.VHost
+	entry.Queue = req.SourceQueue
+	entry.TargetQueue = req.TargetQueue
+	entry.TargetExchange = req.TargetExchange
+	entry.TargetRoutingKey = req.TargetKey
+	entry.DryRun = req.DryRun
+	entry.Limit = req.Limit
 	entry.Filters = auditFilters(req.Spec.Filters)
 	entry.Status = audit.StatusRunning
 	s.audit.Record(entry)

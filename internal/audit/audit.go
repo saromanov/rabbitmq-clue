@@ -106,7 +106,7 @@ func NewStore(max int, filePath string) (*Store, error) {
 	if filePath == "" {
 		return s, nil
 	}
-	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // path comes from the operator-provided config
 	if err != nil {
 		return nil, fmt.Errorf("open audit file: %w", err)
 	}
