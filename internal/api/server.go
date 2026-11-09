@@ -514,7 +514,7 @@ func (s *Server) handleReplay(w http.ResponseWriter, r *http.Request) {
 	entry.TargetRoutingKey = req.TargetKey
 	entry.DryRun = req.DryRun
 	entry.Limit = req.Limit
-	entry.Filters = auditFilters(req.Spec.Filters)
+	entry.Filters = auditFilters(req.Filters)
 	entry.Status = audit.StatusRunning
 	s.audit.Record(entry)
 	writeJSON(w, http.StatusAccepted, map[string]string{"job_id": id})
