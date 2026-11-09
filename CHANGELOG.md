@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Audit log: every replay (including moves and dry-runs), purge and
+  publish is recorded with the actor, connection/vhost/queue, filters,
+  limits and affected message counts, and shown in a new **Audit** UI
+  page. Exposed via `GET /api/audit` with `operation`/`queue`/`user`/
+  `limit` filters. The actor is the client IP, or the value of
+  `RMQ_CLUE_AUDIT_USER_HEADER` (for use behind an authenticating
+  proxy). Optional `RMQ_CLUE_AUDIT_FILE` persists the trail as an
+  append-only JSONL file that survives restarts.
 - Message journey: peek responses now carry a `journey` object for
   messages with `x-death` headers — the chronological hop list (queue,
   reason, count, time, source exchange and routing keys), the origin

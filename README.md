@@ -49,6 +49,7 @@ rabbitmq-clue does these things in a browser, with confirmations, dry runs and a
 - **Protobuf schemas** — paste or upload `.proto` files, compile them in memory (no protoc, no generated code), pick a message type and publish payloads encoded as binary protobuf or JSON — optionally wrapped in `google.protobuf.Any`. Saved schemas are bound to exchanges/queues and auto-suggested in the publish form and in peek, where payloads are decoded to JSON on the fly (with automatic `Any` unwrapping by `type_url`).
 - **Multi-connection** — configure several brokers (env or JSON file), switch connections and vhosts in the UI.
 - **Topology diff** — export a vhost topology snapshot (queues, exchanges, bindings, policies with their arguments) to JSON and diff dev vs prod: live-to-live, snapshot-to-snapshot, or mixed. The UI renders a color-coded report; `POST /api/topology/diff` with `{"format": "text"}` returns the same report as plain text for curl and CI.
+- **Audit log** — every replay, purge and publish is recorded with the actor, the queue, the filters and how many messages were affected. Shown in the UI under "Audit" and exposed via `GET /api/audit`; optionally persisted to an append-only JSONL file.
 - **Read-only mode** — `RMQ_CLUE_READ_ONLY=true` disables every mutating endpoint; useful when the UI is pointed at production.
 
 ## Caveats (the honest section)
@@ -75,6 +76,8 @@ Replayed messages get `x-replayed-by: rabbitmq-clue` and `x-replay-time` headers
 | `RMQ_CLUE_READ_ONLY` | `false` | Disable all mutating operations |
 | `RMQ_CLUE_CONNECTIONS_FILE` | — | JSON file with multiple connections (see below) |
 | `RMQ_CLUE_SCHEMAS_DIR` | `data/schemas` | Directory where saved protobuf schemas are stored |
+| `RMQ_CLUE_AUDIT_FILE` | — | Append-only JSONL file for the audit trail (survives restarts when set) |
+| `RMQ_CLUE_AUDIT_USER_HEADER` | — | Request header with the authenticated user (e.g. `X-Forwarded-User`); when unset, the audit log records the client IP |
 
 Multiple connections:
 
@@ -86,6 +89,22 @@ Multiple connections:
 ```
 
 Credentials are accepted only through environment or file — never command-line flags — and are never logged.
+
+## Audit log
+
+Every mutating operation is audited: `replay` (including moves and dry-runs), `purge` and `publish`. Each entry records who ran it, when, on which connection/vhost/queue, with which filters and limits, and how many messages were affected (purge: the queue depth observed right before the purge; replay: processed/ok/skipped/failed counts folded in when the job ends, including cancellations; publish: 1). Failed operations are recorded with the error.
+
+The log is kept in memory (last 1000 entries, newest first) and shown in the UI under **Audit**. It is also exposed for automation:
+
+```bash
+curl 'http://127.0.0.1:8080/api/audit?operation=replay&limit=50'
+```
+
+Set `RMQ_CLUE_AUDIT_FILE` to an append-only JSONL path to make the trail survive restarts. Records are immutable snapshots: a finished replay appends a second record with the same id, and the last record per id wins on load; a torn line from a crash is skipped.
+
+Identity: rabbitmq-clue has no built-in authentication. Without `RMQ_CLUE_AUDIT_USER_HEADER` the audit log records the client IP as the actor. When you set the header, the value is taken verbatim from that request header.
+
+**Security note:** only enable `RMQ_CLUE_AUDIT_USER_HEADER` (e.g. to `X-Forwarded-User`) when the server is behind a reverse proxy that authenticates users and overwrites that header on every request. Otherwise any client can claim any identity by setting the header itself.
 
 ## Development
 
