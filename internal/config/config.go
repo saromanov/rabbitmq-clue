@@ -19,10 +19,17 @@ type Connection struct {
 
 // Config is the resolved application configuration.
 type Config struct {
-	Addr        string
-	ReadOnly    bool
-	SchemasDir  string
-	Connections []Connection
+	Addr       string
+	ReadOnly   bool
+	SchemasDir string
+	// AuditFile is an optional path to an append-only JSONL audit trail.
+	AuditFile string
+	// AuditUserHeader names the request header that carries the
+	// authenticated user, e.g. X-Forwarded-User set by an auth proxy.
+	// It must only be enabled behind a proxy that overwrites this
+	// header; when empty, the audit log records the client IP instead.
+	AuditUserHeader string
+	Connections     []Connection
 }
 
 // Env prefix used for all environment variables.
@@ -34,10 +41,12 @@ const envPrefix = "RMQ_CLUE_"
 // so they stay out of shell history and process listings.
 func Load() (*Config, error) {
 	cfg := &Config{
-		Addr:        envString("ADDR", "127.0.0.1:8080"),
-		ReadOnly:    envBool("READ_ONLY", false),
-		SchemasDir:  envString("SCHEMAS_DIR", "data/schemas"),
-		Connections: []Connection{},
+		Addr:            envString("ADDR", "127.0.0.1:8080"),
+		ReadOnly:        envBool("READ_ONLY", false),
+		SchemasDir:      envString("SCHEMAS_DIR", "data/schemas"),
+		AuditFile:       envString("AUDIT_FILE", ""),
+		AuditUserHeader: envString("AUDIT_USER_HEADER", ""),
+		Connections:     []Connection{},
 	}
 
 	if path := envString("CONNECTIONS_FILE", ""); path != "" {
